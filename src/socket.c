@@ -1,0 +1,75 @@
+#include "socket.h"
+#include <stdio.h>
+
+ServerSocket *create_server_socket(char *ip, int port, int backlog)
+{
+    // malloc: Allocate memory dynamically for a ServerSocket structure
+    // sizeof(ServerSocket): Calculate how many bytes we need
+    // (ServerSocket *): Cast the returned void pointer to ServerSocket pointer
+    // This creates space to store the server data
+    ServerSocket *server = (ServerSocket *)malloc(sizeof(ServerSocket));
+
+    // Check if socket() failed (returns -1 on error)
+    if (!server)
+    {
+        perror("Couln't allocate memory for server socket");
+        return NULL;
+    }
+
+    // socket(): Create a socket - returns a file descriptor (a number like 3, 4, 5...)
+    // AF_INET: Address Family - IPv4 (not IPv6, not other protocols)
+    // SOCK_STREAM: Socket type - TCP (reliable, ordered delivery)
+    // 0: Protocol - use default protocol for AF_INET + SOCK_STREAM
+    // Result is stored in server->server_socket.fd
+    server->server_socket.fd = socket(AF_INET, SOCK_STREAM, 0);
+
+    // Check if socket() failed (returns -1 on error)
+    if (server->server_socket.fd < 0)
+    {
+        perror("socket creation failed"); // Print system error
+        free(server);                     // Free memory we allocated
+        return NULL;                      // Return NULL to indicate failure
+    }
+
+    // Store the port number in the server structure for later reference
+    server->server_socket.port = port;
+
+    // Store the backlog (queue size for pending connections)
+    server->backlog = backlog;
+
+    // Store the IP address in the server structure for later reference
+    strcpy(server->server_socket.ip, ip);
+
+    // memset(): Fill memory with zeros (initialize the address structure)
+    // &server->server_socket.address: Address of the struct to initialize
+    // 0: Fill with zero bytes
+    // sizeof(...): How many bytes to fill
+    // This clears any garbage data from memory
+    memset(&server->server_socket.address, 0, sizeof(server->server_socket.address));
+
+    // sin_family: Set the address family to AF_INET (IPv4)
+    // Must match the AF_INET we used in socket() call
+    server->server_socket.address.sin_family = AF_INET;
+
+    // htons(): Convert host byte order to network byte order
+    // Computers store numbers differently (endianness), network uses big-endian
+    // htons = "host to network short" (short = 16-bit number like port)
+    // Example: port 5000 -> network representation
+    server->server_socket.address.sin_port = htons(port);
+
+    // INADDR_ANY was hardcoded to listen on all IPs
+    // Now we convert the IP string we stored in line 41 to binary format
+    // inet_pton(): Convert IP string (dotted decimal) to binary format
+    // AF_INET: IPv4 format
+    // server->server_socket.ip: The IP string we stored ("0.0.0.0" or any other IP)
+    // &server->server_socket.address.sin_addr: Where to store the binary IP
+    // This allows the server to listen only on the specified IP address
+    inet_pton(AF_INET, server->server_socket.ip, &server->server_socket.address.sin_addr);
+
+    // Print success message showing the file descriptor number
+    // File descriptors are usually: 0=stdin, 1=stdout, 2=stderr, 3+=our sockets
+    printf("[SERVER] Socket created successfully (fd: %d)\n", server->server_socket.fd);
+
+    // Return pointer to the initialized server structure
+    return server;
+}
