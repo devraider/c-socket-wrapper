@@ -32,6 +32,8 @@ int main(int argc, char *argv[])
 
         server_bind(server);
         server_listen(server);
+
+        Socket *actepted_socket = server_accept(server);
     }
     else
     {

@@ -21,5 +21,6 @@ typedef struct
 ServerSocket *create_server_socket(char *ip, int port, int backlog);
 int server_bind(ServerSocket *server);
 int server_listen(ServerSocket *server);
+Socket *server_accept(ServerSocket *server);
 
 #endif

@@ -218,3 +218,110 @@ int server_listen(ServerSocket *server)
            server->backlog);
     return 0;
 }
+
+Socket *server_accept(ServerSocket *server)
+{
+    // Allocate memory for a new Socket structure to hold client info
+    Socket *client_socket = (Socket *)malloc(sizeof(Socket));
+    if (!client_socket)
+    {
+        perror("[SERVER] malloc failed");
+        return NULL;
+    }
+
+    // Prepare to accept incoming connection
+    socklen_t addr_len = sizeof(client_socket->address);
+
+    /*
+     * accept() — what it really does (detailed)
+     *
+     * 1) Purpose
+     *    - accept() retrieves a connection from the pending queue of a listening socket.
+     *    - It creates a new socket for the client connection and returns its file descriptor.
+     *    - New socket is created because pending queue sockets are not used for data transfer and are just placeholders.
+     *
+     * 2) Arguments used here
+     *    - sockfd: the listening socket file descriptor.
+     *    - addr: pointer to a struct sockaddr_in to store client address info.
+     *    - addrlen: pointer to socklen_t, which is updated with the size of the client address.
+     *
+     * 3) What the kernel does on accept
+     *    - Removes a connection from the pending queue (if any).
+     *    - Creates a new socket for communication with the client.
+     *    - Returns a new file descriptor for this new connection.
+     *
+     * 4) Return value & error handling
+     *    - On success, returns a new file descriptor for the accepted connection.
+     *    - On error, returns -1 and sets errno (use perror()/strerror(errno)).
+     *
+     * 5) Common errors & causes
+     *    - EBADF: The sockfd is not a valid file descriptor.
+     *    - EINVAL: The sockfd is not of type SOCK_STREAM or SOCK_SEQPACKET,
+     *      or it has not been bound with bind().
+     *
+     * 6) Debugging tips
+     *    - Ensure listen() was called successfully before accept().
+     *
+     */
+    client_socket->fd = accept(server->server_socket.fd,
+                               (struct sockaddr *)&client_socket->address,
+                               &addr_len);
+
+    if (client_socket->fd < 0)
+    {
+        perror("[SERVER] accept failed");
+        free(client_socket);
+        return NULL;
+    }
+
+    // Convert network byte order to host byte order for the port number
+    // ntohs(): "network to host short" (short = 16-bit number like port)
+    // The port is stored in network byte order (big-endian) in the struct.
+    // We convert it to host byte order so we can read/print it as a normal number.
+    client_socket->port = ntohs(client_socket->address.sin_port);
+
+    /*
+     * inet_ntop() — convert binary IP address to human-readable string format
+     *
+     * Purpose:
+     *   - Takes a binary IP address (32-bit for IPv4) and converts it to
+     *     dotted decimal notation (e.g., "192.0.2.1").
+     *   - "ntop" = "network to presentation" (binary -> human-readable).
+     *
+     * Arguments used here:
+     *   1) AF_INET: Address family (IPv4 in this case).
+     *   2) &client_socket->address.sin_addr: Pointer to the binary IP address
+     *      stored in network byte order (big-endian format).
+     *      This is a 32-bit unsigned integer holding the IP in binary form.
+     *   3) client_socket->ip: Character buffer where the string will be stored.
+     *      Must be large enough to hold the result (e.g., "255.255.255.255" = 15 chars + null).
+     *   4) sizeof(client_socket->ip): Size of the buffer.
+     *      Protects against buffer overflow by telling inet_ntop the max size available.
+     *
+     * How it works:
+     *   - inet_ntop takes the 32-bit binary IP (e.g., 0xC0000201 for 192.0.2.1).
+     *   - It converts each octet (8-bit part) to decimal.
+     *   - Writes the dotted decimal string to the buffer (e.g., "192.0.2.1").
+     *   - Null-terminates the string for safe C string handling.
+     *
+     * Return value:
+     *   - Returns a pointer to the output buffer on success.
+     *   - Returns NULL on error (invalid address family or buffer too small).
+     *
+     * Why we need this:
+     *   - The kernel stores IP addresses in binary form for efficient processing.
+     *   - Humans need to read/print IP addresses as strings (e.g., in debug output).
+     *   - inet_ntop handles the conversion automatically for us.
+     *
+     * Related functions:
+     *   - inet_pton(): The reverse operation (string -> binary).
+     *   - We used inet_pton earlier to convert "0.0.0.0" -> binary for bind().
+     */
+    inet_ntop(AF_INET, &client_socket->address.sin_addr,
+              client_socket->ip, sizeof(client_socket->ip));
+
+    printf("[SERVER] Accepted connection from %s:%d (fd: %d)\n",
+           client_socket->ip, client_socket->port, client_socket->fd);
+
+    return client_socket;
+}
