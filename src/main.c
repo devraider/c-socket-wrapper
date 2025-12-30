@@ -31,6 +31,7 @@ int main(int argc, char *argv[])
         }
 
         server_bind(server);
+        server_listen(server);
     }
     else
     {

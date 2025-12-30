@@ -156,3 +156,65 @@ int server_bind(ServerSocket *server)
     printf("[SERVER] Socket bound successfully\n");
     return 0;
 }
+
+int server_listen(ServerSocket *server)
+{
+    /*
+     * listen() — what it really does (detailed)
+     *
+     * 1) Purpose
+     *    - listen(fd, backlog) tells the kernel: "This socket will accept incoming
+     *      connection requests. Please queue them up to 'backlog' length."
+     *    - It marks the socket as a passive socket that will be used to accept connections.
+     *
+     * 2) Arguments used here
+     *    - fd: the socket() file descriptor (an integer handle).
+     *    - backlog: maximum number of pending connections to queue.
+     *      If more connections arrive, they may be refused or ignored.
+     *
+     * 3) What the kernel does on listen
+     *    - Allocates resources for the pending connection queue.
+     *    - Prepares to handle incoming SYN packets for TCP connections.
+     *    - Incoming connection requests are placed in the queue until accept() is called.
+     *
+     * 4) Backlog behavior
+     *    - The backlog parameter is a hint to the kernel about how many connections
+     *      to queue. The actual limit may be higher or lower depending on system settings.
+     *    - If the queue is full, new connection attempts may be refused (clients get ECONNREFUSED).
+     *
+     * 5) Differences from bind/accept
+     *    - bind names the socket with an IP:port. listen marks it as ready to accept connections.
+     *    - accept retrieves and removes a connection from the pending queue, returning a new FD.
+     *
+     * 6) Return value & error handling
+     *    - listen returns 0 on success, -1 on error and sets errno.
+     *    - Use perror()/strerror(errno) to display the failure reason.
+     *
+     * 7) Common errors & causes
+     *    - EBADF: The fd is not a valid file descriptor.
+     *    - EINVAL: The socket is not of type SOCK_STREAM or SOCK_SEQPACKET,
+     *      or it has not been bound with bind().
+     *
+     * 8) Debugging tips
+     *    - Ensure bind() was called successfully before listen().
+     *    - Print errno with perror() to see the specific error message.
+     *
+     * 9) Summary
+     *    - listen() prepares a bound socket to accept incoming connection requests.
+     *    - After listen, the socket can queue incoming connections until accept() is called.
+     *
+     */
+    int listen_result = listen(server->server_socket.fd, server->backlog);
+
+    if (listen_result < 0)
+    {
+        perror("[SERVER] Listen failed");
+        return -1;
+    }
+
+    printf("[SERVER] Listening on %s:%d (backlog: %d)\n",
+           server->server_socket.ip,
+           server->server_socket.port,
+           server->backlog);
+    return 0;
+}

@@ -20,5 +20,6 @@ typedef struct
 /* Function prototypes for the socket wrapper library */
 ServerSocket *create_server_socket(char *ip, int port, int backlog);
 int server_bind(ServerSocket *server);
+int server_listen(ServerSocket *server);
 
 #endif
