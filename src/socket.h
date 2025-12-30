@@ -27,4 +27,8 @@ Socket *server_accept(ServerSocket *server);
 int socket_send(Socket *socket, const char *data);
 int socket_receive(Socket *socket, char *buffer, int buffer_size);
 
+// Cleanup functions
+void server_free(ServerSocket *server);
+int socket_close(Socket *socket);
+
 #endif

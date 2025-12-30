@@ -517,3 +517,79 @@ int socket_receive(Socket *socket, char *buffer, int buffer_size)
     printf("[RECEIVE] Received %d bytes: %s\n", bytes_received, buffer);
     return bytes_received;
 }
+
+int socket_close(Socket *socket)
+{
+    if (socket && socket->fd >= 0)
+    {
+        printf("[CLOSE] Closing socket (fd: %d)\n", socket->fd);
+
+        /*
+         * close() - Close a socket (detailed kernel-level explanation)
+         *
+         * Purpose:
+         *   - Closes the socket file descriptor, releasing associated resources.
+         *   - Notifies the kernel that the socket is no longer needed.
+         *
+         * What happens at the kernel level when close() is called:
+         *
+         * 1) Resource Cleanup
+         *    - The kernel marks the file descriptor as closed.
+         *    - Releases memory and buffers associated with the socket.
+         *    - Decrements reference counts for underlying structures.
+         *
+         * 2) TCP Connection Teardown
+         *    - If it's a TCP socket, the kernel initiates connection termination.
+         *    - Sends a FIN packet to the remote host to signal connection closure.
+         *    - Waits for an ACK from the remote host confirming receipt of FIN.
+         *    - Enters TIME_WAIT state to handle any delayed packets (prevents confusion).
+         *
+         * 3) File Descriptor Reuse
+         *    - The file descriptor number becomes available for reuse by future socket() calls.
+         *    - Subsequent calls to socket() may return the same fd number.
+         *
+         * 4) Return Value & Error Handling
+         *    - Returns 0 on success, -1 on error and sets errno.
+         *    - Common errors include EBADF (invalid fd) if already closed.
+         *
+         * 5) Important Notes
+         *    - Always call close() to avoid resource leaks.
+         *    - Failing to close sockets can exhaust system file descriptors.
+         *    - After close(), the socket fd should not be used again.
+         *
+         * 6) Debugging Tips
+         *    - Use `lsof` or `ss` to check open sockets before and after close().
+         *    - Monitor system resource usage to detect leaks.
+         *
+         */
+        int close_result = close(socket->fd);
+        if (close_result < 0)
+        {
+            perror("close failed");
+            return -1;
+        }
+        socket->fd = -1;
+    }
+    return 0;
+}
+
+void server_free(ServerSocket *server)
+{
+    if (server)
+    {
+        socket_close(&server->server_socket);
+
+        /*
+         * free() - Free a ServerSocket structure
+         * Purpose:
+         *   - Releases memory allocated for the ServerSocket structure.
+         *   - Ensures proper cleanup of resources.
+         *
+         * What happens at the kernel level when close() is called:
+         *
+         * 1) Memory Deallocation
+         *   - The malloc()ed memory for the ServerSocket structure is returned to the heap
+         */
+        free(server);
+    }
+}
