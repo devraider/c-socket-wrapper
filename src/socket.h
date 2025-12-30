@@ -23,4 +23,8 @@ int server_bind(ServerSocket *server);
 int server_listen(ServerSocket *server);
 Socket *server_accept(ServerSocket *server);
 
+// Send/Receive functions
+int socket_send(Socket *socket, const char *data);
+int socket_receive(Socket *socket, char *buffer, int buffer_size);
+
 #endif

@@ -325,3 +325,195 @@ Socket *server_accept(ServerSocket *server)
 
     return client_socket;
 }
+
+int socket_send(Socket *socket, const char *data)
+{
+
+    /*
+     * send() - Send data on a socket (detailed kernel-level explanation)
+     *
+     * Purpose:
+     *   - Sends data from the buffer pointed to by 'data' to the socket.
+     *   - Returns the number of bytes sent, or -1 on error.
+     *
+     * Arguments:
+     *   1) socket->fd: The file descriptor of the socket (from accept()).
+     *   2) data: Pointer to the buffer containing data to send.
+     *   3) strlen(data): Length of the data in bytes (assumes null-terminated string).
+     *   4) 0: Flags (0 = no special behavior).
+     *
+     * What happens at the kernel level when send() is called:
+     *
+     * 1) Data Copying
+     *    - The kernel copies the data from user-space memory (your buffer)
+     *      into kernel-space memory (the socket send buffer).
+     *    - This happens because user programs shouldn't directly access kernel memory.
+     *    - The kernel allocates a send buffer (typically a few KB to MB depending on SO_SNDBUF).
+     *
+     * 2) TCP Stack Processing
+     *    - The kernel passes the data to the TCP/IP stack.
+     *    - The TCP layer breaks large data into segments (typically ~1460 bytes for Ethernet).
+     *    - Each segment gets a TCP header with:
+     *      * Source and destination port numbers
+     *      * Sequence number (for ordering at receiver)
+     *      * Checksum (for error detection)
+     *      * Various flags (SYN, ACK, FIN, RST, etc.)
+     *
+     * 3) IP Layer Processing
+     *    - The IP layer adds an IP header with:
+     *      * Source and destination IP addresses
+     *      * TTL (Time-To-Live, decremented at each router)
+     *      * Protocol type (6 for TCP)
+     *      * Another checksum for error detection
+     *
+     * 4) Hardware Layer
+     *    - The data packet is passed to the network interface (NIC driver).
+     *    - The NIC adds an Ethernet header (MAC addresses, frame type).
+     *    - The NIC transmits the frame onto the physical network (WiFi, Ethernet, etc.).
+     *    - The frame is broken into bits and sent electronically.
+     *
+     * 5) Buffering and Flow Control
+     *    - If the send buffer is full, send() may block (wait) until space is available.
+     *    - TCP implements flow control: the receiver tells the sender how much
+     *      data it can accept (via the TCP window field).
+     *    - If the remote host's receive buffer is full, send() may block even if
+     *      the local send buffer has space.
+     *
+     * 6) Acknowledgment (ACK) from Receiver
+     *    - The remote TCP stack receives the data and sends back an ACK.
+     *    - The ACK tells the sender which bytes were received successfully.
+     *    - If an ACK doesn't arrive within a timeout, the kernel retransmits the data.
+     *    - This ensures reliable delivery (TCP's job).
+     *
+     * 7) Return Value Meaning
+     *    - Returns the number of bytes the kernel accepted (buffered/sent).
+     *    - This does NOT mean the remote host received the data yet.
+     *    - send() returning 10 means: "I buffered 10 bytes for transmission."
+     *    - The actual network transmission happens asynchronously.
+     *
+     * 8) Common Errors & Causes
+     *    - EBADF: Invalid file descriptor.
+     *    - EPIPE: Connection closed by remote host (broken pipe).
+     *    - ECONNRESET: Connection reset by peer (remote host crashed or reset).
+     *    - EAGAIN/EWOULDBLOCK: Send buffer full (non-blocking socket).
+     *
+     * 9) Important Notes
+     *    - send() is asynchronous: data goes to the kernel buffer, not directly on the wire.
+     *    - The kernel handles retransmission, ordering, and error checking automatically.
+     *    - Your application doesn't wait for network packets; it just hands off the data.
+     *    - Network delays (latency) are hidden from the application.
+     *
+     * 10) Debugging Tips
+     *    - Use `ss -tnp` or `netstat -anp` to see socket send buffer sizes.
+     *    - Packet sniffers (tcpdump, Wireshark) show the actual bytes on the wire.
+     *    - Use SO_SNDBUF socket option to tune the send buffer size.
+     */
+    int bytes_sent = send(socket->fd, data, strlen(data), 0);
+
+    if (bytes_sent < 0)
+    {
+        perror("send failed");
+        return -1;
+    }
+
+    printf("[SEND] Sent %d bytes: %s\n", bytes_sent, data);
+    return bytes_sent;
+}
+
+int socket_receive(Socket *socket, char *buffer, int buffer_size)
+{
+    /*
+     * recv() - Receive data on a socket (detailed kernel-level explanation)
+     *
+     * Purpose:
+     *   - Retrieves data received on the socket from the kernel receive buffer.
+     *   - Copies data from kernel-space to user-space (your buffer).
+     *   - Returns the number of bytes received, 0 if connection closed, -1 on error.
+     *
+     * Arguments:
+     *   1) socket->fd: The file descriptor of the socket (from accept()).
+     *   2) buffer: Pointer to user-space memory where received data will be stored.
+     *   3) buffer_size - 1: Maximum number of bytes to read (leaving room for null terminator).
+     *   4) 0: Flags (0 = blocking, standard behavior).
+     *
+     * What happens at the kernel level when recv() is called:
+     *
+     * 1) Blocking Behavior (Default)
+     *    - If the receive buffer is empty (no data arrived yet), recv() blocks (sleeps).
+     *    - The kernel puts your process in a "wait queue" for this socket.
+     *    - When data arrives, the kernel wakes up your process.
+     *    - recv() returns immediately if data is already buffered.
+     *
+     * 2) Data Arrival from Network
+     *    - Network packets arrive at the NIC (network interface card).
+     *    - NIC driver extracts the Ethernet frame and passes it to the kernel.
+     *    - Kernel's network stack (IP layer) processes the IP header:
+     *      * Validates checksum
+     *      * Checks destination IP matches local machine
+     *      * Checks TTL (rejects if expired)
+     *    - Kernel passes packet to TCP layer.
+     *
+     * 3) TCP Processing at Kernel
+     *    - TCP layer validates the TCP header and checksum.
+     *    - Checks sequence number (ensures ordered delivery).
+     *    - If out-of-order, stores in reorder buffer until missing segments arrive.
+     *    - Extracts payload data and places it in the receive buffer for your socket.
+     *    - Sends ACK back to sender (automatic, transparent to your app).
+     *
+     * 4) Kernel Buffer Management
+     *    - The kernel maintains a receive buffer (typically a few KB to MB).
+     *    - Data sits here until your application calls recv().
+     *    - If the buffer fills up, kernel sends a TCP window size = 0 to stop sender.
+     *    - The sender then pauses transmission until you drain the buffer.
+     *
+     * 5) Data Copying to User Space
+     *    - When recv() is called, kernel copies data from the receive buffer to your buffer.
+     *    - Only the amount specified by (buffer_size - 1) is copied.
+     *    - We subtract 1 to leave room for null terminator (C string convention).
+     *    - This copying is necessary for security (isolate user programs from kernel).
+     *
+     * 6) Return Value Meaning
+     *    - Returns number of bytes copied into your buffer.
+     *    - Returns 0 if the remote host closed the connection gracefully (FIN received).
+     *    - Returns -1 on error (check errno for details).
+     *    - Note: recv() is partial read; it may return fewer bytes than you requested.
+     *      For example, recv(fd, buf, 1000, 0) might return only 50 bytes even if
+     *      1000 bytes are available. You must call recv() in a loop to get all data.
+     *
+     * 7) Error Handling & Connection States
+     *    - EBADF: Invalid file descriptor.
+     *    - ECONNRESET: Remote host reset connection (sent RST).
+     *    - ETIMEDOUT: No data received for a long time (connection stale).
+     *    - 0 return: Remote closed gracefully (FIN flag received).
+     *
+     * 8) Partial Reads (Important!)
+     *    - recv() may return fewer bytes than requested.
+     *    - The kernel returns as soon as there's some data available.
+     *    - Application must loop and call recv() again until all expected data arrives.
+     *    - This is normal TCP behavior; you can't rely on recv() returning all bytes at once.
+     *
+     * 9) ACK Behavior (Automatic)
+     *    - The kernel automatically sends TCP ACK for received data.
+     *    - This happens even before your application calls recv().
+     *    - ACK tells the sender the data arrived safely at this machine (not yet at the app).
+     *
+     * 10) Debugging Tips
+     *    - Use `ss -tnp` to see receive buffer usage and connection state.
+     *    - tcpdump or Wireshark shows actual packets arriving on the NIC.
+     *    - Add recv() in a loop to handle partial reads properly.
+     *    - Use MSG_DONTWAIT flag for non-blocking recv() if needed.
+     */
+    int bytes_received = recv(socket->fd, buffer, buffer_size - 1, 0);
+
+    if (bytes_received < 0)
+    {
+        perror("recv failed");
+        return -1;
+    }
+
+    // Null-terminate the received data (make it a valid C string)
+    buffer[bytes_received] = '\0';
+
+    printf("[RECEIVE] Received %d bytes: %s\n", bytes_received, buffer);
+    return bytes_received;
+}
