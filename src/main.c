@@ -33,7 +33,31 @@ int main(int argc, char *argv[])
         server_bind(server);
         server_listen(server);
 
-        Socket *actepted_socket = server_accept(server);
+        while (1)
+        {
+            Socket *client = server_accept(server);
+            if (!client)
+            {
+                fprintf(stderr, "Failed to accept client\n");
+                continue;
+            }
+            socket_send(client, "Welcome to the server!\n");
+
+            char buffer[SOCKET_BUFFER_SIZE];
+            int bytes_received = socket_receive(client, buffer, SOCKET_BUFFER_SIZE - 1);
+            if (!bytes_received)
+            {
+                fprintf(stderr, "Failed to receive data from client\n");
+                socket_close(client);
+                free(client);
+                continue;
+            }
+
+            socket_send(client, "Message received\n");
+
+            socket_close(client);
+            free(client);
+        }
     }
     else
     {

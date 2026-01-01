@@ -3,6 +3,8 @@
 
 #include <netinet/in.h>
 
+int SOCKET_BUFFER_SIZE = 1024;
+
 typedef struct
 {
     int fd;                     // Socket file descriptor
